@@ -49,6 +49,7 @@ TARGETS_COPY += xenpvnetboot
 
 # Everything which needs to be built
 TARGETS_BUILD := $(filter-out $(TARGETS_COPY),$(TARGETS_ALL))
+TARGETS_BUILD += xen-vcpus-stats
 
 # ... including build-only targets
 TARGETS_BUILD-$(CONFIG_X86)    += xen-vmtrace
@@ -134,5 +135,10 @@ xencov: xencov.o
 
 xen-ucode: xen-ucode.o
 	$(CC) $(LDFLAGS) -o $@ $< $(LDLIBS_libxenctrl) $(APPEND_LDFLAGS)
+
+xen-vcpus-stats.o: CFLAGS += $(CFLAGS_libxenforeginmemory)
+
+xen-vcpus-stats: xen-vcpus-stats.o
+	$(CC) $(LDFLAGS) -o $@ $< $(LDLIBS_libxenctrl) $(LDLIBS_libxenforeignmemory) $(APPEND_LDFLAGS)
 
 -include $(DEPS_INCLUDE)

@@ -626,6 +626,7 @@ struct xen_mem_acquire_resource {
 #define XENMEM_resource_ioreq_server 0
 #define XENMEM_resource_grant_table 1
 #define XENMEM_resource_vmtrace_buf 2
+#define XENMEM_resource_stats_table 3
 
     /*
      * IN - a type-specific resource identifier, which must be zero
@@ -633,11 +634,13 @@ struct xen_mem_acquire_resource {
      *
      * type == XENMEM_resource_ioreq_server -> id == ioreq server id
      * type == XENMEM_resource_grant_table -> id defined below
+     * type == XENMEM_resource_stats_table -> id defined below
      */
     uint32_t id;
 
 #define XENMEM_resource_grant_table_id_shared 0
 #define XENMEM_resource_grant_table_id_status 1
+#define XENMEM_resource_stats_table_id_vcpustats 0
 
     /*
      * IN/OUT

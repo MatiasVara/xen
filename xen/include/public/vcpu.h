@@ -235,6 +235,19 @@ struct vcpu_register_time_memory_area {
 typedef struct vcpu_register_time_memory_area vcpu_register_time_memory_area_t;
 DEFINE_XEN_GUEST_HANDLE(vcpu_register_time_memory_area_t);
 
+struct vcpu_stats {
+    /*
+     * If the least-significant bit of the version number is set then an update
+     * is in progress and the guest must wait to read a consistent set of
+     * values. This mechanism is similar to Linux's seqlock.
+     */
+    uint32_t version;
+    uint32_t pad0;
+    uint64_t runstate_running_time;
+};
+
+typedef struct vcpu_stats xen_shared_vcpustats_t;
+
 #endif /* __XEN_PUBLIC_VCPU_H__ */
 
 /*

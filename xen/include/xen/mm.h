@@ -134,6 +134,8 @@ int assign_pages(
 /* Dump info to serial console */
 void arch_dump_shared_mem_info(void);
 
+void stats_free_vcpu_mfn(struct domain *d);
+
 /*
  * Extra fault info types which are used to further describe
  * the source of an access violation.

@@ -932,6 +932,7 @@ int domain_kill(struct domain *d)
             break;
         if ( cpupool_move_domain(d, cpupool0) )
             return -ERESTART;
+        stats_free_vcpu_mfn(d);
         for_each_vcpu ( d, v )
             unmap_vcpu_info(v);
         d->is_dying = DOMDYING_dead;

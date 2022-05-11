@@ -1092,6 +1092,27 @@ unsigned int ioreq_server_max_frames(const struct domain *d)
     return nr;
 }
 
+unsigned int stats_table_max_frames(const struct domain *d, unsigned int id)
+{
+    unsigned int nr = 0;
+    unsigned int size;
+
+    switch ( id )
+    {
+    case XENMEM_resource_stats_table_id_vcpustats:
+        size = DIV_ROUND_UP(sizeof(struct vcpu_shmem_stats), SMP_CACHE_BYTES) +
+               DIV_ROUND_UP(sizeof(struct vcpu_stats), SMP_CACHE_BYTES) * d->max_vcpus;
+
+        nr = DIV_ROUND_UP(size, PAGE_SIZE);
+        break;
+
+    default:
+        break;
+    }
+
+    return nr;
+}
+
 /*
  * Return 0 on any kind of error.  Caller converts to -EINVAL.
  *
@@ -1112,6 +1133,9 @@ static unsigned int resource_max_frames(const struct domain *d,
 
     case XENMEM_resource_vmtrace_buf:
         return d->vmtrace_size >> PAGE_SHIFT;
+
+    case XENMEM_resource_stats_table:
+        return stats_table_max_frames(d, id);
 
     default:
         return -EOPNOTSUPP;
@@ -1176,6 +1200,146 @@ static int acquire_vmtrace_buf(
     return nr_frames;
 }
 
+void stats_free_vcpu_mfn(struct domain * d)
+{
+    struct page_info *pg = d->vcpustats_page.pg;
+    void * _va = d->vcpustats_page.va;
+    unsigned int i;
+    unsigned int size;
+    unsigned int nr_frames;
+
+    if ( !pg )
+        return;
+
+    d->vcpustats_page.pg = NULL;
+    d->vcpustats_page.va = NULL;
+
+    size = DIV_ROUND_UP(sizeof(struct vcpu_shmem_stats), SMP_CACHE_BYTES) +
+           DIV_ROUND_UP(sizeof(struct vcpu_stats), SMP_CACHE_BYTES)
+           * d->max_vcpus;
+
+    nr_frames = DIV_ROUND_UP(size, PAGE_SIZE);
+
+    vunmap(_va);
+
+    for ( i = 0; i < nr_frames; i++ )
+    {
+        put_page_alloc_ref(&pg[i]);
+        put_page_and_type(&pg[i]);
+    }
+}
+
+static int stats_vcpu_alloc_mfn(struct domain *d)
+{
+    struct page_info *pg;
+    int order;
+    unsigned int i;
+    unsigned int size;
+    unsigned int nr_frames;
+    void *_va;
+    mfn_t mfn;
+    struct vcpu_shmem_stats *hd;
+
+    size = DIV_ROUND_UP(sizeof(struct vcpu_shmem_stats), SMP_CACHE_BYTES) +
+           DIV_ROUND_UP(sizeof(struct vcpu_stats), SMP_CACHE_BYTES)
+           * d->max_vcpus;
+
+    nr_frames = DIV_ROUND_UP(size, PAGE_SIZE);
+
+    order = get_order_from_bytes(size);
+    pg = alloc_domheap_pages(d, order, MEMF_no_refcount);
+
+    if ( !pg )
+        return -ENOMEM;
+
+    for ( i = 0; i < nr_frames; i++ )
+    {
+        if ( unlikely(!get_page_and_type(&pg[i], d, PGT_writable_page)) )
+            /*
+             * The domain can't possibly know about this page yet, so failure
+             * here is a clear indication of something fishy going on.
+             */
+            goto refcnt_err;
+    }
+
+    mfn = page_to_mfn(pg);
+    _va = vmap(&mfn, nr_frames);
+    if ( !_va )
+        goto refcnt_err;
+
+    for ( i = 0; i < nr_frames; i++ )
+        clear_page(_va + i * PAGE_SIZE);
+
+    /* Initialize vcpu_shmem_stats header */
+    hd = (struct vcpu_shmem_stats*)_va;
+    hd->magic = VCPU_STATS_MAGIC;
+    hd->offset = ROUNDUP(sizeof(struct vcpu_shmem_stats), SMP_CACHE_BYTES);
+    hd->size = sizeof(struct vcpu_stats);
+    hd->stride = ROUNDUP(sizeof(struct vcpu_stats), SMP_CACHE_BYTES);
+
+    d->vcpustats_page.va  = _va;
+    d->vcpustats_page.pg = pg;
+
+    return 0;
+
+ refcnt_err:
+    /*
+     * We can theoretically reach this point if someone has taken 2^43 refs on
+     * the frames in the time the above loop takes to execute, or someone has
+     * made a blind decrease reservation hypercall and managed to pick the
+     * right mfn.  Free the memory we safely can, and leak the rest.
+     */
+    while ( i-- )
+    {
+        put_page_alloc_ref(&pg[i]);
+        put_page_and_type(&pg[i]);
+    }
+
+    return -ENODATA;
+}
+
+static int acquire_stats_table(struct domain *d,
+                               unsigned int id,
+                               unsigned int frame,
+                               unsigned int nr_frames,
+                               xen_pfn_t mfn_list[])
+{
+    mfn_t mfn;
+    int rc;
+    unsigned int i;
+    unsigned int max_frames;
+
+    if ( !d )
+        return -ENOENT;
+
+    switch ( id )
+    {
+    case XENMEM_resource_stats_table_id_vcpustats:
+        max_frames = DIV_ROUND_UP(d->max_vcpus * sizeof(struct vcpu_stats),
+                                  PAGE_SIZE);
+
+        if ( (frame + nr_frames) > max_frames )
+            return -EINVAL;
+
+        if ( !d->vcpustats_page.pg )
+        {
+            rc = stats_vcpu_alloc_mfn(d);
+            if ( rc )
+                return rc;
+        }
+
+        mfn = page_to_mfn(d->vcpustats_page.pg);
+        for ( i = 0; i < nr_frames; i++ )
+            mfn_list[i] = mfn_x(mfn) + frame + i;
+        break;
+
+    default:
+        return -EINVAL;
+    }
+
+    return nr_frames;
+}
+
 /*
  * Returns -errno on error, or positive in the range [1, nr_frames] on
  * success.  Returning less than nr_frames contitutes a request for a
@@ -1195,6 +1359,9 @@ static int _acquire_resource(
 
     case XENMEM_resource_vmtrace_buf:
         return acquire_vmtrace_buf(d, id, frame, nr_frames, mfn_list);
+
+    case XENMEM_resource_stats_table:
+        return acquire_stats_table(d, id, frame, nr_frames, mfn_list);
 
     default:
         return -EOPNOTSUPP;

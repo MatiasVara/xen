@@ -588,6 +588,11 @@ struct domain
         struct ioreq_server     *server[MAX_NR_IOREQ_SERVERS];
     } ioreq_server;
 #endif
+    /* Pages that host vcpu stats */
+    struct {
+        struct page_info *pg;
+        void *va;
+    } vcpustats_page;
 };
 
 static inline struct page_list_head *page_to_list(

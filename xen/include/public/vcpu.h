@@ -235,6 +235,33 @@ struct vcpu_register_time_memory_area {
 typedef struct vcpu_register_time_memory_area vcpu_register_time_memory_area_t;
 DEFINE_XEN_GUEST_HANDLE(vcpu_register_time_memory_area_t);
 
+struct vcpu_shmem_stats {
+#define VCPU_STATS_MAGIC 0xaabbccdd
+    uint32_t magic;
+    uint32_t offset;
+    uint32_t size;
+    uint32_t stride;
+};
+
+struct vcpu_stats {
+    /*
+     * If the least-significant bit of the seq number is set then an update
+     * is in progress and the consumer must wait to read a consistent set of
+     * values. This mechanism is similar to Linux's seqlock.
+     */
+    uint32_t seq;
+    uint32_t pad0;
+    /*
+     * If the most-significant bit of a counter is set then the counter
+     * is inactive and the consumer must ignore its value. Note that this
+     * could also indicate that the counter has overflowed.
+     */
+     uint64_t runstate_running_time;
+};
+
+typedef struct vcpu_shmem_stats xen_vcpu_shmemstats_t;
+typedef struct vcpu_stats xen_shared_vcpustats_t;
+
 #endif /* __XEN_PUBLIC_VCPU_H__ */
 
 /*

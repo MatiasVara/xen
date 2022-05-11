@@ -264,6 +264,11 @@ static inline void vcpu_runstate_change(
 {
     s_time_t delta;
     struct sched_unit *unit = v->sched_unit;
+    struct vcpu_shmem_stats *vcpu_shmem;
+    struct vcpu_stats *vcpu_info;
+    void *_va;
+    struct domain *d = v->domain;
+    int offset;
 
     ASSERT(spin_is_locked(get_sched_res(v->processor)->schedule_lock));
     if ( v->runstate.state == new_state )
@@ -287,6 +292,21 @@ static inline void vcpu_runstate_change(
     }
 
     v->runstate.state = new_state;
+
+    _va = d->vcpustats_page.va;
+
+    if ( !_va )
+        return;
+
+    vcpu_shmem = (struct vcpu_shmem_stats*)_va;
+    vcpu_info = (struct vcpu_stats*)((void*)vcpu_shmem + vcpu_shmem->offset);
+    offset = (vcpu_shmem->stride * v->vcpu_id);
+    vcpu_info += offset;
+    vcpu_info->seq = version_update_begin(vcpu_info->seq);
+    smp_wmb();
+    vcpu_info->runstate_running_time = v->runstate.time[RUNSTATE_running];
+    smp_wmb();
+    vcpu_info->seq = version_update_end(vcpu_info->seq);
 }
 
 void sched_guest_idle(void (*idle) (void), unsigned int cpu)

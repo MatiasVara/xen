@@ -9,3 +9,5 @@ Hypervisor documentation
    code-coverage
 
    x86/index
+
+   acquire_resource_reference

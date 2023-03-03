@@ -2787,6 +2787,7 @@ static int _put_page_type(struct page_info *page, unsigned int flags,
         {
         case 0:
             if ( unlikely((nx & PGT_type_mask) <= PGT_l4_page_table) &&
+                 unlikely((nx & PGT_type_mask) >= PGT_l1_page_table) &&
                  likely(nx & (PGT_validated|PGT_partial)) )
             {
                 int rc;
@@ -3072,7 +3073,7 @@ static int _get_page_type(struct page_info *page, unsigned long type,
          *
          * per validate_page(), non-atomic updates are fine here.
          */
-        if ( type == PGT_writable_page || type == PGT_shared_page )
+        if ( type == PGT_writable_page || type == PGT_shared_page || type == PGT_none )
             page->u.inuse.type_info |= PGT_validated;
         else
         {

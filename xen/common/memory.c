@@ -1254,7 +1254,7 @@ static int stats_vcpu_alloc_mfn(struct domain *d)
 
     for ( i = 0; i < nr_frames; i++ )
     {
-        if ( unlikely(!get_page_and_type(&pg[i], d, PGT_writable_page)) )
+        if ( unlikely(!get_page_and_type(&pg[i], d, PGT_none)) )
             /*
              * The domain can't possibly know about this page yet, so failure
              * here is a clear indication of something fishy going on.
